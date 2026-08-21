@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Wedding Invitation | Gurumoorthy Weds Vanaja</title>
   
   <!-- Google Fonts -->
@@ -30,7 +30,9 @@
       box-sizing: border-box;
     }
 
-    body {
+    body, html {
+      width: 100%;
+      height: 100%;
       font-family: 'Marcellus', serif;
       background-color: var(--charcoal);
       color: #f1f1f1;
@@ -60,14 +62,14 @@
       background-position: center center;
       background-repeat: no-repeat;
       opacity: 0;
+      visibility: hidden;
       transition: opacity 0.5s ease;
       will-change: opacity;
-      display: none; /* Controlled dynamically by active state and screen width */
     }
 
     .bg-layer.active {
       opacity: 1;
-      display: block;
+      visibility: visible;
     }
 
     #bg-venue { 
@@ -86,6 +88,7 @@
 
     section {
       min-height: 100vh;
+      width: 100vw;
       position: relative;
       display: flex;
       flex-direction: column;
@@ -274,30 +277,21 @@
 
   <!-- Background Stage -->
   <div class="bg-stage">
-    <!-- Desktop Home Video -->
-    <video id="bg-home" class="bg-layer active" muted playsinline preload="auto">
+    <video id="bg-home" class="bg-layer active" muted playsinline webkit-playsinline preload="auto">
       <source src="5.mp4" type="video/mp4">
     </video>
-    <!-- Mobile Home Video -->
-    <video id="bg-home-mobile" class="bg-layer" muted playsinline preload="auto">
+    <video id="bg-home-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto">
       <source src="mobile1.mp4" type="video/mp4">
     </video>
-
-    <!-- Desktop Invitation Video -->
-    <video id="bg-invitation" class="bg-layer" muted playsinline preload="auto">
+    <video id="bg-invitation" class="bg-layer" muted playsinline webkit-playsinline preload="auto">
       <source src="4.mp4" type="video/mp4">
     </video>
-    <!-- Mobile Invitation Video -->
-    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline preload="auto">
+    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto">
       <source src="mobile2.mp4" type="video/mp4">
     </video>
-
-    <!-- Events Video -->
     <video id="bg-events" class="bg-layer" muted playsinline preload="auto">
       <source src="3.mp4" type="video/mp4">
     </video>
-
-    <!-- Venue Static Image -->
     <div id="bg-venue" class="bg-layer"></div>
   </div>
 
@@ -360,6 +354,14 @@
     
     const videoCompleted = { 0: false, 1: false, 2: false };
 
+    // Unlock video playback instantly on first user tap/touch anywhere on mobile
+    window.addEventListener('touchstart', () => {
+      const activeVideo = getActiveVideo();
+      if (activeVideo && activeVideo.paused) {
+        activeVideo.play().catch(() => {});
+      }
+    }, { once: true });
+
     function getActiveVideo() {
       const isMobile = window.innerWidth <= 768;
       if (currentIndex === 0) return isMobile ? document.getElementById('bg-home-mobile') : document.getElementById('bg-home');
@@ -389,14 +391,15 @@
     }
 
     document.querySelectorAll('video').forEach((vid) => {
+      vid.load();
       vid.addEventListener('ended', () => {
-        const isMobile = window.innerWidth <= 768;
         if ((vid.id === 'bg-home' || vid.id === 'bg-home-mobile') && currentIndex === 0) videoCompleted[0] = true;
         if ((vid.id === 'bg-invitation' || vid.id === 'bg-invitation-mobile') && currentIndex === 1) videoCompleted[1] = true;
         if (vid.id === 'bg-events' && currentIndex === 2) videoCompleted[2] = true;
       });
     });
 
+    // Desktop Mouse Wheel Handling
     window.addEventListener('wheel', (e) => {
       e.preventDefault();
       if (isTransitioning) return;
@@ -432,7 +435,7 @@
       }
     }, { passive: false });
 
-    // Touch support for mobile scrolling/swiping validation
+    // Mobile Touch/Swipe Handling
     let touchStartY = 0;
     window.addEventListener('touchstart', (e) => {
       touchStartY = e.touches[0].clientY;
@@ -441,9 +444,9 @@
     window.addEventListener('touchend', (e) => {
       if (isTransitioning) return;
       let touchEndY = e.changedTouches[0].clientY;
-      let deltaY = touchStartY - touchEndY; // Positive means scrolling down
+      let deltaY = touchStartY - touchEndY;
 
-      if (Math.abs(deltaY) < 40) return; // Ignore small taps
+      if (Math.abs(deltaY) < 30) return;
 
       const activeVideo = getActiveVideo();
 
