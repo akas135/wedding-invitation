@@ -62,10 +62,12 @@
       opacity: 0;
       transition: opacity 0.5s ease;
       will-change: opacity;
+      display: none; /* Controlled dynamically by active state and screen width */
     }
 
     .bg-layer.active {
       opacity: 1;
+      display: block;
     }
 
     #bg-venue { 
@@ -125,11 +127,11 @@
 
     .hero-date {
       letter-spacing: 3px;
-      color: #2b2b2b; /* Dark color for the date */
+      color: #2b2b2b;
       font-size: 1.15rem;
       font-weight: 700;
       margin-bottom: 0.4rem;
-      text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6); /* Soft light glow for readability against dark video */
+      text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
     }
 
     .section-title {
@@ -266,38 +268,36 @@
       position: relative;
       z-index: 10;
     }
-
-    .desktop-video { display: block; }
-    .mobile-video { display: none; }
-
-    @media (max-width: 768px) {
-      .desktop-video { display: none; }
-      .mobile-video { display: block; }
-    }
   </style>
 </head>
 <body>
 
   <!-- Background Stage -->
   <div class="bg-stage">
-    <video id="bg-home" class="bg-layer active desktop-video" muted playsinline preload="auto">
+    <!-- Desktop Home Video -->
+    <video id="bg-home" class="bg-layer active" muted playsinline preload="auto">
       <source src="5.mp4" type="video/mp4">
     </video>
-    <video id="bg-home-mobile" class="bg-layer desktop-video" style="display:none;" muted playsinline preload="auto">
+    <!-- Mobile Home Video -->
+    <video id="bg-home-mobile" class="bg-layer" muted playsinline preload="auto">
       <source src="mobile1.mp4" type="video/mp4">
     </video>
 
-    <video id="bg-invitation" class="bg-layer desktop-video" muted playsinline preload="auto">
+    <!-- Desktop Invitation Video -->
+    <video id="bg-invitation" class="bg-layer" muted playsinline preload="auto">
       <source src="4.mp4" type="video/mp4">
     </video>
-    <video id="bg-invitation-mobile" class="bg-layer mobile-video" muted playsinline preload="auto">
+    <!-- Mobile Invitation Video -->
+    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline preload="auto">
       <source src="mobile2.mp4" type="video/mp4">
     </video>
 
+    <!-- Events Video -->
     <video id="bg-events" class="bg-layer" muted playsinline preload="auto">
       <source src="3.mp4" type="video/mp4">
     </video>
 
+    <!-- Venue Static Image -->
     <div id="bg-venue" class="bg-layer"></div>
   </div>
 
@@ -390,6 +390,7 @@
 
     document.querySelectorAll('video').forEach((vid) => {
       vid.addEventListener('ended', () => {
+        const isMobile = window.innerWidth <= 768;
         if ((vid.id === 'bg-home' || vid.id === 'bg-home-mobile') && currentIndex === 0) videoCompleted[0] = true;
         if ((vid.id === 'bg-invitation' || vid.id === 'bg-invitation-mobile') && currentIndex === 1) videoCompleted[1] = true;
         if (vid.id === 'bg-events' && currentIndex === 2) videoCompleted[2] = true;
@@ -430,6 +431,50 @@
         }
       }
     }, { passive: false });
+
+    // Touch support for mobile scrolling/swiping validation
+    let touchStartY = 0;
+    window.addEventListener('touchstart', (e) => {
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      if (isTransitioning) return;
+      let touchEndY = e.changedTouches[0].clientY;
+      let deltaY = touchStartY - touchEndY; // Positive means scrolling down
+
+      if (Math.abs(deltaY) < 40) return; // Ignore small taps
+
+      const activeVideo = getActiveVideo();
+
+      if (activeVideo && activeVideo.tagName === 'VIDEO') {
+        if (deltaY > 0) {
+          activeVideo.playbackRate = 2.5;
+          if (activeVideo.paused) activeVideo.play().catch(() => {});
+        }
+
+        const isFinished = videoCompleted[currentIndex] || (activeVideo.currentTime >= (activeVideo.duration - 0.2));
+
+        if (isFinished) {
+          videoCompleted[currentIndex] = true;
+          if (deltaY > 0 && currentIndex < sections.length - 1) {
+            changeSection(currentIndex + 1);
+          } else if (deltaY < 0 && currentIndex > 0) {
+            changeSection(currentIndex - 1);
+          }
+        } else {
+          if (deltaY < 0 && currentIndex > 0) {
+            changeSection(currentIndex - 1);
+          }
+        }
+      } else {
+        if (deltaY > 0 && currentIndex < sections.length - 1) {
+          changeSection(currentIndex + 1);
+        } else if (deltaY < 0 && currentIndex > 0) {
+          changeSection(currentIndex - 1);
+        }
+      }
+    }, { passive: true });
 
     function changeSection(index) {
       isTransitioning = true;
