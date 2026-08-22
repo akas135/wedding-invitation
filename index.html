@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Wedding Invitation | Gurumoorthy Weds Vanaja</title>
   
   <!-- Google Fonts -->
@@ -30,9 +30,7 @@
       box-sizing: border-box;
     }
 
-    body, html {
-      width: 100%;
-      height: 100%;
+    body {
       font-family: 'Marcellus', serif;
       background-color: var(--charcoal);
       color: #f1f1f1;
@@ -62,18 +60,22 @@
       background-position: center center;
       background-repeat: no-repeat;
       opacity: 0;
-      visibility: hidden;
       transition: opacity 0.5s ease;
       will-change: opacity;
     }
 
     .bg-layer.active {
       opacity: 1;
-      visibility: visible;
     }
 
     #bg-venue { 
       background-image: url('1.png'); 
+    }
+
+    @media (max-width: 768px) {
+      #bg-venue {
+        background-image: url('mobile1.png');
+      }
     }
 
     #petals-canvas {
@@ -88,7 +90,6 @@
 
     section {
       min-height: 100vh;
-      width: 100vw;
       position: relative;
       display: flex;
       flex-direction: column;
@@ -130,11 +131,11 @@
 
     .hero-date {
       letter-spacing: 3px;
-      color: #2b2b2b;
+      color: #2b2b2b; /* Dark color for the date */
       font-size: 1.15rem;
       font-weight: 700;
       margin-bottom: 0.4rem;
-      text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
+      text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6); /* Soft light glow for readability against dark video */
     }
 
     .section-title {
@@ -271,27 +272,31 @@
       position: relative;
       z-index: 10;
     }
+
   </style>
 </head>
 <body>
 
   <!-- Background Stage -->
   <div class="bg-stage">
-    <video id="bg-home" class="bg-layer active" muted playsinline webkit-playsinline preload="auto">
+    <video id="bg-home" class="bg-layer active" muted autoplay playsinline webkit-playsinline preload="auto" poster="5.png">
       <source src="5.mp4" type="video/mp4">
     </video>
-    <video id="bg-home-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto">
+    <video id="bg-home-mobile" class="bg-layer" muted autoplay playsinline webkit-playsinline preload="auto" poster="mobile1.jpg">
       <source src="mobile1.mp4" type="video/mp4">
     </video>
-    <video id="bg-invitation" class="bg-layer" muted playsinline webkit-playsinline preload="auto">
+
+    <video id="bg-invitation" class="bg-layer" muted autoplay playsinline webkit-playsinline preload="auto" poster="4.png">
       <source src="4.mp4" type="video/mp4">
     </video>
-    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto">
+    <video id="bg-invitation-mobile" class="bg-layer" muted autoplay playsinline webkit-playsinline preload="auto" poster="mobile2.jpg">
       <source src="mobile2.mp4" type="video/mp4">
     </video>
-    <video id="bg-events" class="bg-layer" muted playsinline preload="auto">
+
+    <video id="bg-events" class="bg-layer" muted autoplay playsinline webkit-playsinline preload="auto" poster="3.png">
       <source src="3.mp4" type="video/mp4">
     </video>
+
     <div id="bg-venue" class="bg-layer"></div>
   </div>
 
@@ -354,20 +359,25 @@
     
     const videoCompleted = { 0: false, 1: false, 2: false };
 
-    // Unlock video playback instantly on first user tap/touch anywhere on mobile
-    window.addEventListener('touchstart', () => {
-      const activeVideo = getActiveVideo();
-      if (activeVideo && activeVideo.paused) {
-        activeVideo.play().catch(() => {});
-      }
-    }, { once: true });
+    // If a mobile-specific video 404s or fails to decode, fall back to its
+    // desktop counterpart instead of leaving the layer blank.
+    const mobileFallbackMap = {
+      'bg-home-mobile': 'bg-home',
+      'bg-invitation-mobile': 'bg-invitation'
+    };
 
     function getActiveVideo() {
       const isMobile = window.innerWidth <= 768;
-      if (currentIndex === 0) return isMobile ? document.getElementById('bg-home-mobile') : document.getElementById('bg-home');
-      if (currentIndex === 1) return isMobile ? document.getElementById('bg-invitation-mobile') : document.getElementById('bg-invitation');
-      if (currentIndex === 2) return document.getElementById('bg-events');
-      return null;
+      let target;
+      if (currentIndex === 0) target = isMobile ? document.getElementById('bg-home-mobile') : document.getElementById('bg-home');
+      else if (currentIndex === 1) target = isMobile ? document.getElementById('bg-invitation-mobile') : document.getElementById('bg-invitation');
+      else if (currentIndex === 2) target = document.getElementById('bg-events');
+      else return null;
+
+      if (target && target.dataset.broken === 'true' && mobileFallbackMap[target.id]) {
+        return document.getElementById(mobileFallbackMap[target.id]);
+      }
+      return target;
     }
 
     function updateStage() {
@@ -391,7 +401,20 @@
     }
 
     document.querySelectorAll('video').forEach((vid) => {
+      // Some mobile browsers only honor autoplay if `muted` is set as a live
+      // property (not just the HTML attribute) before load/play.
+      vid.muted = true;
+      vid.defaultMuted = true;
       vid.load();
+
+      vid.addEventListener('error', () => {
+        if (mobileFallbackMap[vid.id]) {
+          console.warn(`${vid.id} failed to load; will fall back to ${mobileFallbackMap[vid.id]}.`);
+          vid.dataset.broken = 'true';
+          if (currentIndex === 0 || currentIndex === 1) updateStage();
+        }
+      }, true);
+
       vid.addEventListener('ended', () => {
         if ((vid.id === 'bg-home' || vid.id === 'bg-home-mobile') && currentIndex === 0) videoCompleted[0] = true;
         if ((vid.id === 'bg-invitation' || vid.id === 'bg-invitation-mobile') && currentIndex === 1) videoCompleted[1] = true;
@@ -399,54 +422,17 @@
       });
     });
 
-    // Desktop Mouse Wheel Handling
-    window.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      if (isTransitioning) return;
-
+    // Unlock playback on the first tap, in case a mobile browser blocked the
+    // initial programmatic .play() call before any user gesture happened.
+    window.addEventListener('touchstart', () => {
       const activeVideo = getActiveVideo();
-
-      if (activeVideo && activeVideo.tagName === 'VIDEO') {
-        if (e.deltaY > 0) {
-          activeVideo.playbackRate = 2.5; 
-          if (activeVideo.paused) activeVideo.play().catch(() => {});
-        }
-
-        const isFinished = videoCompleted[currentIndex] || (activeVideo.currentTime >= (activeVideo.duration - 0.2));
-
-        if (isFinished) {
-          videoCompleted[currentIndex] = true;
-          if (e.deltaY > 0 && currentIndex < sections.length - 1) {
-            changeSection(currentIndex + 1);
-          } else if (e.deltaY < 0 && currentIndex > 0) {
-            changeSection(currentIndex - 1);
-          }
-        } else {
-          if (e.deltaY < 0 && currentIndex > 0) {
-            changeSection(currentIndex - 1); 
-          }
-        }
-      } else {
-        if (e.deltaY > 0 && currentIndex < sections.length - 1) {
-          changeSection(currentIndex + 1);
-        } else if (e.deltaY < 0 && currentIndex > 0) {
-          changeSection(currentIndex - 1);
-        }
+      if (activeVideo && activeVideo.paused) {
+        activeVideo.play().catch(() => {});
       }
-    }, { passive: false });
+    }, { once: true });
 
-    // Mobile Touch/Swipe Handling
-    let touchStartY = 0;
-    window.addEventListener('touchstart', (e) => {
-      touchStartY = e.touches[0].clientY;
-    }, { passive: true });
-
-    window.addEventListener('touchend', (e) => {
+    function handleNavigationIntent(deltaY) {
       if (isTransitioning) return;
-      let touchEndY = e.changedTouches[0].clientY;
-      let deltaY = touchStartY - touchEndY;
-
-      if (Math.abs(deltaY) < 30) return;
 
       const activeVideo = getActiveVideo();
 
@@ -477,6 +463,26 @@
           changeSection(currentIndex - 1);
         }
       }
+    }
+
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      handleNavigationIntent(e.deltaY);
+    }, { passive: false });
+
+    // Touch/swipe navigation - without this, mobile visitors can never
+    // advance past the first section's background, since touch devices
+    // don't fire 'wheel' events at all.
+    let touchStartY = 0;
+    window.addEventListener('touchstart', (e) => {
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    window.addEventListener('touchend', (e) => {
+      const touchEndY = e.changedTouches[0].clientY;
+      const deltaY = touchStartY - touchEndY;
+      if (Math.abs(deltaY) < 30) return; // ignore taps/small jitters
+      handleNavigationIntent(deltaY);
     }, { passive: true });
 
     function changeSection(index) {
@@ -502,6 +508,14 @@
     window.addEventListener('resize', () => {
       width = canvas.width = window.innerWidth;
       height = canvas.height = window.innerHeight;
+    });
+
+    // Re-check desktop/mobile video choice if the viewport crosses the
+    // 768px breakpoint (resize or orientation change) without a section change.
+    let resizeVideoTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeVideoTimer);
+      resizeVideoTimer = setTimeout(updateStage, 200);
     });
 
     const petals = Array.from({ length: 22 }, () => ({
