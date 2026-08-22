@@ -68,13 +68,12 @@
       opacity: 1;
     }
 
-    #bg-venue { 
-      background-image: url('1.png'); 
-    }
-
-    @media (max-width: 768px) {
+    /* Only desktop still swaps to a static venue background image - mobile's
+       single continuous video now plays straight through the venue section,
+       so neither 1.png nor mobile1.png is ever requested on mobile. */
+    @media (min-width: 769px) {
       #bg-venue {
-        background-image: url('mobile1.png');
+        background-image: url('1.png');
       }
     }
 
@@ -119,16 +118,24 @@
       width: fit-content;
       max-width: 550px;
       z-index: 10;
-      opacity: 0;
-      transform: translateY(12px);
-      transition: opacity 1s ease, transform 1s ease;
-      pointer-events: none;
     }
 
-    .hero-bottom-content.revealed {
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
+    /* Desktop only: names/date stay hidden until video 1 actually finishes
+       (see JS). Mobile now runs a single continuous background video with
+       no section orchestration, so its hero text just shows immediately. */
+    @media (min-width: 769px) {
+      .hero-bottom-content {
+        opacity: 0;
+        transform: translateY(12px);
+        transition: opacity 1s ease, transform 1s ease;
+        pointer-events: none;
+      }
+
+      .hero-bottom-content.revealed {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
     }
 
     .couple-title {
@@ -297,22 +304,25 @@
 
   <!-- Background Stage -->
   <div class="bg-stage">
-    <video id="bg-home" class="bg-layer active" muted playsinline webkit-playsinline preload="auto" poster="5.png">
-      <source src="5.mp4" type="video/mp4">
+    <!-- Desktop-only clips use data-src instead of src: on mobile these are
+         never converted/fetched at all, saving bandwidth, since mobile now
+         uses a single continuous video (bg-home-mobile) for the whole page. -->
+    <video id="bg-home" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="5.png">
+      <source data-src="5.mp4" type="video/mp4">
     </video>
     <video id="bg-home-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="mobile1.jpg">
       <source src="mobile1.mp4" type="video/mp4">
     </video>
 
-    <video id="bg-invitation" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="4.png">
-      <source src="4.mp4" type="video/mp4">
+    <video id="bg-invitation" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="4.png">
+      <source data-src="4.mp4" type="video/mp4">
     </video>
-    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="mobile2.jpg">
-      <source src="mobile2.mp4" type="video/mp4">
+    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="mobile2.jpg">
+      <source data-src="mobile2.mp4" type="video/mp4">
     </video>
 
-    <video id="bg-events" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="3.png">
-      <source src="3.mp4" type="video/mp4">
+    <video id="bg-events" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="3.png">
+      <source data-src="3.mp4" type="video/mp4">
     </video>
 
     <div id="bg-venue" class="bg-layer"></div>
@@ -373,6 +383,61 @@
   <script>
     AOS.init({ once: true, duration: 1000 });
 
+    const isMobileView = window.innerWidth <= 768;
+
+    // ---------------------------------------------------------------
+    // MOBILE: single continuous background video, natural page scroll,
+    // nothing else downloaded. Desktop is untouched below this block.
+    // ---------------------------------------------------------------
+    if (isMobileView) {
+      function runSingleMobileVideo(video) {
+        if (!video) return;
+        video.loop = false;
+        video.muted = true;
+        video.defaultMuted = true;
+        video.preload = 'auto';
+        video.load();
+        video.classList.add('active');
+        const p = video.play();
+        if (p && p.catch) {
+          p.catch(err => console.error(`[mobile video] "${video.id}" failed to play: ${err.name} - ${err.message}`));
+        }
+      }
+
+      const mobileVideo = document.getElementById('bg-home-mobile');
+      runSingleMobileVideo(mobileVideo);
+
+      // If mobile1.mp4 itself fails (bad file/404), fall back to the
+      // desktop clip rather than showing nothing.
+      mobileVideo.addEventListener('error', () => {
+        console.warn('bg-home-mobile failed to load; falling back to bg-home.');
+        const fallback = document.getElementById('bg-home');
+        const source = fallback.querySelector('source');
+        if (source.dataset.src && !source.src) source.src = source.dataset.src;
+        mobileVideo.classList.remove('active');
+        runSingleMobileVideo(fallback);
+      }, true);
+
+      // Unlock playback on first touch, in case autoplay was blocked before
+      // any user gesture happened.
+      window.addEventListener('touchstart', () => {
+        const active = document.querySelector('.bg-layer.active');
+        if (active && active.tagName === 'VIDEO' && active.paused) {
+          active.play().catch(() => {});
+        }
+      }, { once: true, passive: true });
+
+      // Falling petals still run the same as desktop.
+      runPetalsCanvas();
+
+    } else {
+      // ---------------------------------------------------------------
+      // DESKTOP: existing full experience, unchanged.
+      // ---------------------------------------------------------------
+      runDesktopExperience();
+    }
+
+    function runDesktopExperience() {
     const sections = document.querySelectorAll('section');
     let currentIndex = 0;
     let isTransitioning = false;
@@ -445,7 +510,19 @@
       // property (not just the HTML attribute) before load/play.
       vid.muted = true;
       vid.defaultMuted = true;
-      vid.load(); // fetch every clip up front, on every device
+
+      // Desktop-only clips were left as data-src/data-poster in the markup
+      // (see above) so mobile never fetches them - convert back to real
+      // src/poster here, for desktop only, so this device still gets
+      // everything it needs exactly as before.
+      const source = vid.querySelector('source');
+      if (source && source.dataset.src && !source.src) {
+        source.src = source.dataset.src;
+      }
+      if (vid.dataset.poster && !vid.poster) {
+        vid.poster = vid.dataset.poster;
+      }
+      vid.load(); // fetch every clip this device actually needs, up front
 
       vid.addEventListener('error', () => {
         const mediaErr = vid.error;
@@ -621,17 +698,6 @@
 
     updateStage();
 
-    // Canvas Petals
-    const canvas = document.getElementById('petals-canvas');
-    const ctx = canvas.getContext('2d');
-    let width = canvas.width = window.innerWidth;
-    let height = canvas.height = window.innerHeight;
-
-    window.addEventListener('resize', () => {
-      width = canvas.width = window.innerWidth;
-      height = canvas.height = window.innerHeight;
-    });
-
     // Re-check desktop/mobile video choice if the viewport crosses the
     // 768px breakpoint (resize or orientation change) without a section change.
     let resizeVideoTimer;
@@ -640,43 +706,59 @@
       resizeVideoTimer = setTimeout(updateStage, 200);
     });
 
-    const petals = Array.from({ length: 22 }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      size: Math.random() * 7 + 5,
-      speedX: Math.random() * 1.2 - 0.6,
-      speedY: Math.random() * 1.0 + 0.6,
-      rotation: Math.random() * 360,
-      rotationSpeed: Math.random() * 1.5 - 0.75,
-      color: Math.random() > 0.4 ? 'rgba(247, 214, 224, 0.4)' : 'rgba(212, 175, 55, 0.35)'
-    }));
+    runPetalsCanvas();
+    } // end runDesktopExperience()
 
-    function drawPetals() {
-      ctx.clearRect(0, 0, width, height);
-      petals.forEach(p => {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate((p.rotation * Math.PI) / 180);
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.ellipse(0, 0, p.size, p.size / 2, 0, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+    // Shared by both mobile and desktop.
+    function runPetalsCanvas() {
+      const canvas = document.getElementById('petals-canvas');
+      const ctx = canvas.getContext('2d');
+      let width = canvas.width = window.innerWidth;
+      let height = canvas.height = window.innerHeight;
 
-        p.x += p.speedX;
-        p.y += p.speedY;
-        p.rotation += p.rotationSpeed;
-
-        if (p.y > height) {
-          p.y = -10;
-          p.x = Math.random() * width;
-        }
-        if (p.x > width) p.x = 0;
-        if (p.x < 0) p.x = width;
+      window.addEventListener('resize', () => {
+        width = canvas.width = window.innerWidth;
+        height = canvas.height = window.innerHeight;
       });
-      requestAnimationFrame(drawPetals);
+
+      const petals = Array.from({ length: 22 }, () => ({
+        x: Math.random() * width,
+        y: Math.random() * height,
+        size: Math.random() * 7 + 5,
+        speedX: Math.random() * 1.2 - 0.6,
+        speedY: Math.random() * 1.0 + 0.6,
+        rotation: Math.random() * 360,
+        rotationSpeed: Math.random() * 1.5 - 0.75,
+        color: Math.random() > 0.4 ? 'rgba(247, 214, 224, 0.4)' : 'rgba(212, 175, 55, 0.35)'
+      }));
+
+      function drawPetals() {
+        ctx.clearRect(0, 0, width, height);
+        petals.forEach(p => {
+          ctx.save();
+          ctx.translate(p.x, p.y);
+          ctx.rotate((p.rotation * Math.PI) / 180);
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, p.size, p.size / 2, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          p.x += p.speedX;
+          p.y += p.speedY;
+          p.rotation += p.rotationSpeed;
+
+          if (p.y > height) {
+            p.y = -10;
+            p.x = Math.random() * width;
+          }
+          if (p.x > width) p.x = 0;
+          if (p.x < 0) p.x = width;
+        });
+        requestAnimationFrame(drawPetals);
+      }
+      drawPetals();
     }
-    drawPetals();
 
     function openRouteToVenue() {
       const destinationQuery = encodeURIComponent("VK Krishna Menon Kalyana Mandapam, Avadi");
