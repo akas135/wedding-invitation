@@ -147,6 +147,14 @@
       text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
     }
 
+    .venue-title-block {
+      display: inline-block;
+      background: rgba(0, 0, 0, 0.55);
+      padding: 1.1rem 2rem;
+      border-radius: 14px;
+      margin-bottom: 1rem;
+    }
+
     .venue-section-title {
       font-family: 'Cinzel Decorative', cursive;
       font-size: clamp(1.8rem, 4vw, 2.6rem);
@@ -159,7 +167,7 @@
     .venue-hall-title {
       color: var(--pink-dark);
       font-size: 1.35rem;
-      margin-bottom: 0.3rem;
+      margin-bottom: 0;
       text-shadow: none;
     }
 
@@ -324,7 +332,7 @@
         <p style="font-size: 0.95rem; color: var(--soft-pink);">Join us for an evening of celebrations, laughter, dining, and music.</p>
       </div>
       <div class="event-card">
-        <h3>Wedding (Muhurtham)</h3>
+        <h3>Wedding</h3>
         <p class="date">25th October</p>
         <p class="time">7:30 AM – 9:00 AM</p>
         <hr style="border: 0; border-top: 1px solid rgba(212, 175, 55, 0.4); margin: 1.4rem 0;">
@@ -335,8 +343,10 @@
 
   <section id="venue" data-index="3">
     <div class="venue-content">
-      <h2 class="venue-section-title">Where We Will Gather</h2>
-      <h3 class="venue-hall-title">VK Krishna Menon Kalyana Mandapam</h3>
+      <div class="venue-title-block">
+        <h2 class="venue-section-title">Where We Will Gather</h2>
+        <h3 class="venue-hall-title">VK Krishna Menon Kalyana Mandapam</h3>
+      </div>
       <p class="venue-location">Avadi, Chennai, Tamil Nadu</p>
       <div class="hall-photo-frame">
         <img src="hall.png" alt="Venue">
@@ -366,6 +376,19 @@
       'bg-invitation-mobile': 'bg-invitation'
     };
 
+    // Centralized play helper: logs the REAL reason autoplay failed instead
+    // of silently swallowing it, so we can tell "browser blocked autoplay"
+    // apart from "video failed to decode/load" during debugging.
+    function attemptPlay(video) {
+      if (!video) return;
+      const p = video.play();
+      if (p && p.catch) {
+        p.catch(err => {
+          console.error(`[video] "${video.id}" failed to play: ${err.name} - ${err.message}`);
+        });
+      }
+    }
+
     function getActiveVideo() {
       const isMobile = window.innerWidth <= 768;
       let target;
@@ -393,7 +416,7 @@
       } else if (activeVideo) {
         activeVideo.classList.add('active');
         if (!videoCompleted[currentIndex]) {
-          activeVideo.play().catch(() => {});
+          attemptPlay(activeVideo);
         } else {
           activeVideo.currentTime = activeVideo.duration || 0;
         }
@@ -408,12 +431,22 @@
       vid.load();
 
       vid.addEventListener('error', () => {
+        const mediaErr = vid.error;
+        console.error(`[video] "${vid.id}" errored. code=${mediaErr ? mediaErr.code : '?'} message=${mediaErr ? mediaErr.message : '(none)'}`);
         if (mobileFallbackMap[vid.id]) {
           console.warn(`${vid.id} failed to load; will fall back to ${mobileFallbackMap[vid.id]}.`);
           vid.dataset.broken = 'true';
           if (currentIndex === 0 || currentIndex === 1) updateStage();
         }
       }, true);
+
+      vid.addEventListener('loadeddata', () => {
+        console.log(`[video] "${vid.id}" has data and can render a frame. readyState=${vid.readyState}`);
+      });
+
+      vid.addEventListener('canplay', () => {
+        console.log(`[video] "${vid.id}" reports canplay. paused=${vid.paused} muted=${vid.muted}`);
+      });
 
       vid.addEventListener('ended', () => {
         if ((vid.id === 'bg-home' || vid.id === 'bg-home-mobile') && currentIndex === 0) videoCompleted[0] = true;
@@ -427,7 +460,7 @@
     window.addEventListener('touchstart', () => {
       const activeVideo = getActiveVideo();
       if (activeVideo && activeVideo.paused) {
-        activeVideo.play().catch(() => {});
+        attemptPlay(activeVideo);
       }
     }, { once: true });
 
@@ -439,7 +472,7 @@
       if (activeVideo && activeVideo.tagName === 'VIDEO') {
         if (deltaY > 0) {
           activeVideo.playbackRate = 2.5;
-          if (activeVideo.paused) activeVideo.play().catch(() => {});
+          if (activeVideo.paused) attemptPlay(activeVideo);
         }
 
         const isFinished = videoCompleted[currentIndex] || (activeVideo.currentTime >= (activeVideo.duration - 0.2));
@@ -465,10 +498,42 @@
       }
     }
 
+    // Shared boundary check: true if this scroll direction should be left
+    // to the browser's native scroll (past the last section, or above the
+    // first one) rather than hijacked by our section-swap logic.
+    function shouldAllowNativeScroll(deltaY) {
+      const atLastSection = currentIndex === sections.length - 1;
+      const atFirstSection = currentIndex === 0;
+      return !isTransitioning && ((deltaY > 0 && atLastSection) || (deltaY < 0 && atFirstSection));
+    }
+
     window.addEventListener('wheel', (e) => {
+      if (shouldAllowNativeScroll(e.deltaY)) return;
       e.preventDefault();
       handleNavigationIntent(e.deltaY);
     }, { passive: false });
+
+    // Keyboard navigation - Up/Down (and PageUp/PageDown/Space) drive the
+    // exact same section-swap + fast-forward logic as wheel/touch, so the
+    // background never desyncs from whichever section is actually on screen.
+    const scrollKeys = {
+      ArrowDown: 1, PageDown: 1, ' ': 1,
+      ArrowUp: -1, PageUp: -1
+    };
+    window.addEventListener('keydown', (e) => {
+      if (!(e.key in scrollKeys)) return;
+
+      // Don't hijack keys while the user is interacting with a focusable
+      // control (e.g. Space activating the "Show Route" button).
+      const tag = document.activeElement && document.activeElement.tagName;
+      if (tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+      const direction = scrollKeys[e.key];
+      if (shouldAllowNativeScroll(direction)) return;
+
+      e.preventDefault();
+      handleNavigationIntent(direction * 120); // magnitude mirrors a single wheel tick
+    });
 
     // Touch/swipe navigation - without this, mobile visitors can never
     // advance past the first section's background, since touch devices
@@ -478,9 +543,34 @@
       touchStartY = e.touches[0].clientY;
     }, { passive: true });
 
+    // While actively dragging, continuously speed up the video the same way
+    // the desktop wheel handler does per scroll tick - without this, the
+    // fast-forward effect never shows because touchend only fires once,
+    // right as the finger lifts, instead of throughout the gesture.
+    window.addEventListener('touchmove', (e) => {
+      if (isTransitioning) return;
+      const currentY = e.touches[0].clientY;
+      const dragDeltaY = touchStartY - currentY;
+      const activeVideo = getActiveVideo();
+      if (activeVideo && activeVideo.tagName === 'VIDEO' && Math.abs(dragDeltaY) > 10) {
+        if (dragDeltaY > 0) {
+          activeVideo.playbackRate = 2.5;
+          if (activeVideo.paused) attemptPlay(activeVideo);
+        } else {
+          activeVideo.playbackRate = 1;
+        }
+      }
+    }, { passive: true });
+
     window.addEventListener('touchend', (e) => {
       const touchEndY = e.changedTouches[0].clientY;
       const deltaY = touchStartY - touchEndY;
+
+      const activeVideo = getActiveVideo();
+      if (activeVideo && activeVideo.tagName === 'VIDEO') {
+        activeVideo.playbackRate = 1; // reset in case the gesture didn't finish the section
+      }
+
       if (Math.abs(deltaY) < 30) return; // ignore taps/small jitters
       handleNavigationIntent(deltaY);
     }, { passive: true });
