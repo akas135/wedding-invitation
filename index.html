@@ -366,7 +366,11 @@
     const sections = document.querySelectorAll('section');
     let currentIndex = 0;
     let isTransitioning = false;
-    
+
+    // Only used to lighten mobile's video loading strategy below - desktop
+    // behavior is untouched wherever this flag is checked.
+    const isMobileDevice = window.innerWidth <= 768;
+
     const videoCompleted = { 0: false, 1: false, 2: false };
 
     // If a mobile-specific video 404s or fails to decode, fall back to its
@@ -414,6 +418,15 @@
       if (currentIndex === 3) {
         document.getElementById('bg-venue').classList.add('active');
       } else if (activeVideo) {
+        // Mobile only: the clip for the section we're entering may still be
+        // sitting at preload="none" (see init below) - fetch it now, right
+        // as it's actually needed, instead of every clip fighting for
+        // bandwidth/memory at page load.
+        if (isMobileDevice && activeVideo.tagName === 'VIDEO' && activeVideo.dataset.loaded !== 'true') {
+          activeVideo.preload = 'auto';
+          activeVideo.load();
+          activeVideo.dataset.loaded = 'true';
+        }
         activeVideo.classList.add('active');
         if (!videoCompleted[currentIndex]) {
           attemptPlay(activeVideo);
@@ -423,12 +436,29 @@
       }
     }
 
+    // Mobile only: figure out which single clip section 0 actually needs,
+    // so the rest can stay unfetched until updateStage() requests them.
+    const startingMobileVideo = isMobileDevice ? getActiveVideo() : null;
+
     document.querySelectorAll('video').forEach((vid) => {
       // Some mobile browsers only honor autoplay if `muted` is set as a live
       // property (not just the HTML attribute) before load/play.
       vid.muted = true;
       vid.defaultMuted = true;
-      vid.load();
+
+      if (isMobileDevice) {
+        if (vid === startingMobileVideo) {
+          vid.preload = 'auto';
+          vid.load();
+          vid.dataset.loaded = 'true';
+        } else {
+          // Leave unfetched - updateStage() will load it on demand exactly
+          // when its section is actually reached.
+          vid.preload = 'none';
+        }
+      } else {
+        vid.load();
+      }
 
       vid.addEventListener('error', () => {
         const mediaErr = vid.error;
