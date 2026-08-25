@@ -68,13 +68,12 @@
       opacity: 1;
     }
 
-    #bg-venue {
-      background-image: url('1.png');
-    }
-
-    @media (max-width: 768px) {
+    /* Only desktop still swaps to a static venue background image - mobile's
+       single continuous video plays straight through the venue section,
+       so neither 1.png nor mobile1.png is ever requested on mobile. */
+    @media (min-width: 769px) {
       #bg-venue {
-        background-image: url('mobile1.png');
+        background-image: url('1.png');
       }
     }
 
@@ -119,16 +118,24 @@
       width: fit-content;
       max-width: 550px;
       z-index: 10;
-      opacity: 0;
-      transform: translateY(12px);
-      transition: opacity 1s ease, transform 1s ease;
-      pointer-events: none;
     }
 
-    .hero-bottom-content.revealed {
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events: auto;
+    /* Desktop only: names/date stay hidden until video 1 actually finishes
+       (see JS). Mobile's single continuous video has no section
+       orchestration, so its hero text just shows immediately. */
+    @media (min-width: 769px) {
+      .hero-bottom-content {
+        opacity: 0;
+        transform: translateY(12px);
+        transition: opacity 1s ease, transform 1s ease;
+        pointer-events: none;
+      }
+
+      .hero-bottom-content.revealed {
+        opacity: 1;
+        transform: translateY(0);
+        pointer-events: auto;
+      }
     }
 
     .couple-title {
@@ -335,22 +342,25 @@
 
   <!-- Background Stage -->
   <div class="bg-stage">
-    <video id="bg-home" class="bg-layer active" muted playsinline webkit-playsinline preload="auto" poster="5.png">
-      <source src="5.mp4" type="video/mp4">
+    <!-- Desktop-only clips use data-src/data-poster instead of src/poster:
+         on mobile these are never converted, so the browser never fetches
+         them at all - mobile uses a single continuous video instead. -->
+    <video id="bg-home" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="5.png">
+      <source data-src="5.mp4" type="video/mp4">
     </video>
     <video id="bg-home-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="mobile1.jpg">
       <source src="mobile1.mp4" type="video/mp4">
     </video>
 
-    <video id="bg-invitation" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="4.png">
-      <source src="4.mp4" type="video/mp4">
+    <video id="bg-invitation" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="4.png">
+      <source data-src="4.mp4" type="video/mp4">
     </video>
-    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="mobile2.jpg">
-      <source src="mobile2.mp4" type="video/mp4">
+    <video id="bg-invitation-mobile" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="mobile2.jpg">
+      <source data-src="mobile2.mp4" type="video/mp4">
     </video>
 
-    <video id="bg-events" class="bg-layer" muted playsinline webkit-playsinline preload="auto" poster="3.png">
-      <source src="3.mp4" type="video/mp4">
+    <video id="bg-events" class="bg-layer" muted playsinline webkit-playsinline preload="auto" data-poster="3.png">
+      <source data-src="3.mp4" type="video/mp4">
     </video>
 
     <div id="bg-venue" class="bg-layer"></div>
@@ -471,10 +481,72 @@
       setInterval(tick, 1000);
     })();
 
-    // Multi-video, scroll-driven experience - runs the same on every
-    // device (mobile and desktop both use the full section-swap system,
-    // just with mobile-specific clips selected where available).
-    runFullExperience();
+    const isMobileView = window.innerWidth <= 768;
+
+    // ---------------------------------------------------------------
+    // MOBILE: single continuous background video, natural page scroll,
+    // nothing else downloaded. Desktop runs the full multi-video system
+    // below, completely unchanged.
+    // ---------------------------------------------------------------
+    if (isMobileView) {
+      let mobileVideoUnlocked = false;
+
+      function tryPlayMobileVideo(video) {
+        if (!video || mobileVideoUnlocked) return;
+        const p = video.play();
+        if (p && p.then) {
+          p.then(() => { mobileVideoUnlocked = true; })
+           .catch(err => {
+             console.warn(`[mobile video] play() blocked so far: ${err.name} - ${err.message}`);
+           });
+        }
+      }
+
+      function runSingleMobileVideo(video) {
+        if (!video) return;
+        video.loop = false;
+        video.muted = true;
+        video.defaultMuted = true;
+        video.preload = 'auto';
+        video.classList.add('active');
+        video.load();
+
+        // Retry on every plausible signal instead of a single attempt:
+        // some in-app browsers (WhatsApp, Instagram, etc.) are stricter
+        // about autoplay than real Safari/Chrome and silently reject the
+        // first play() call, so we keep retrying until one succeeds.
+        video.addEventListener('loadeddata', () => tryPlayMobileVideo(video));
+        video.addEventListener('canplay', () => tryPlayMobileVideo(video));
+        tryPlayMobileVideo(video);
+
+        ['touchstart', 'click', 'scroll', 'touchmove'].forEach(evt => {
+          window.addEventListener(evt, () => tryPlayMobileVideo(video), { passive: true });
+        });
+      }
+
+      const mobileVideo = document.getElementById('bg-home-mobile');
+      runSingleMobileVideo(mobileVideo);
+
+      // If mobile1.mp4 itself fails (bad file/404), fall back to the
+      // desktop clip rather than showing nothing.
+      mobileVideo.addEventListener('error', () => {
+        console.warn('bg-home-mobile failed to load; falling back to bg-home.');
+        const fallback = document.getElementById('bg-home');
+        const source = fallback.querySelector('source');
+        if (source.dataset.src && !source.src) source.src = source.dataset.src;
+        if (fallback.dataset.poster && !fallback.poster) fallback.poster = fallback.dataset.poster;
+        mobileVideo.classList.remove('active');
+        runSingleMobileVideo(fallback);
+      }, true);
+
+      runPetalsCanvas();
+
+    } else {
+      // ---------------------------------------------------------------
+      // DESKTOP: full multi-video, scroll-hijacked experience, unchanged.
+      // ---------------------------------------------------------------
+      runFullExperience();
+    }
 
     function runFullExperience() {
     const sections = document.querySelectorAll('section');
@@ -549,7 +621,18 @@
       // property (not just the HTML attribute) before load/play.
       vid.muted = true;
       vid.defaultMuted = true;
-      vid.load(); // fetch every clip up front, on every device
+
+      // This function only runs on desktop - convert data-src/data-poster
+      // (left deferred so mobile never fetches these) back to real
+      // src/poster here, so desktop still gets everything it needs.
+      const source = vid.querySelector('source');
+      if (source && source.dataset.src && !source.src) {
+        source.src = source.dataset.src;
+      }
+      if (vid.dataset.poster && !vid.poster) {
+        vid.poster = vid.dataset.poster;
+      }
+      vid.load();
 
       vid.addEventListener('error', () => {
         const mediaErr = vid.error;
