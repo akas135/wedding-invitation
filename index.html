@@ -237,6 +237,44 @@
       max-width: 950px;
     }
 
+    .countdown {
+      display: flex;
+      gap: 1.2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 3rem;
+    }
+
+    .countdown-box {
+      background: rgba(24, 25, 28, 0.45);
+      border: 1px solid rgba(212, 175, 55, 0.5);
+      border-radius: 12px;
+      backdrop-filter: blur(4px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      padding: 1rem 1.4rem;
+      min-width: 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .countdown-num {
+      font-family: 'Cinzel Decorative', cursive;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      color: var(--gold-light);
+      line-height: 1;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
+    }
+
+    .countdown-label {
+      font-family: 'Montserrat', sans-serif;
+      font-size: 0.75rem;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--baby-pink);
+      margin-top: 0.4rem;
+    }
+
     .event-card {
       background: rgba(24, 25, 28, 0.45);
       border: 1px solid rgba(212, 175, 55, 0.5);
@@ -343,6 +381,24 @@
 
   <section id="events" data-index="2">
     <h2 class="section-title" data-aos="fade-in">Celebration Schedule</h2>
+    <div class="countdown" id="countdown" data-aos="fade-in">
+      <div class="countdown-box">
+        <span class="countdown-num" id="cd-days">00</span>
+        <span class="countdown-label">Days</span>
+      </div>
+      <div class="countdown-box">
+        <span class="countdown-num" id="cd-hours">00</span>
+        <span class="countdown-label">Hours</span>
+      </div>
+      <div class="countdown-box">
+        <span class="countdown-num" id="cd-mins">00</span>
+        <span class="countdown-label">Minutes</span>
+      </div>
+      <div class="countdown-box">
+        <span class="countdown-num" id="cd-secs">00</span>
+        <span class="countdown-label">Seconds</span>
+      </div>
+    </div>
     <div class="events-grid">
       <div class="event-card">
         <h3>Reception</h3>
@@ -382,6 +438,65 @@
   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
   <script>
     AOS.init({ once: true, duration: 1000 });
+
+    // Countdown to the Muhurtham (25 Oct, 7:30 AM) - runs regardless of
+    // device, since it's just foreground DOM content, not tied to the
+    // video background system at all.
+    (function startCountdown() {
+      const daysEl = document.getElementById('cd-days');
+      const hoursEl = document.getElementById('cd-hours');
+      const minsEl = document.getElementById('cd-mins');
+      const secsEl = document.getElementById('cd-secs');
+      if (!daysEl) return;
+
+      function getWeddingDate() {
+        const now = new Date();
+        let target = new Date(now.getFullYear(), 9, 25, 7, 30, 0); // month 9 = October
+        if (target < now) {
+          target = new Date(now.getFullYear() + 1, 9, 25, 7, 30, 0);
+        }
+        return target;
+      }
+
+      let target = getWeddingDate();
+
+      function pad(n) { return String(n).padStart(2, '0'); }
+
+      function tick() {
+        const diff = target - new Date();
+        if (diff <= 0) {
+          target = getWeddingDate(); // roll to next year if we ever pass it
+          return;
+        }
+        const d = Math.floor(diff / (1000 * 60 * 60 * 24));
+        const h = Math.floor((diff / (1000 * 60 * 60)) % 24);
+        const m = Math.floor((diff / (1000 * 60)) % 60);
+        const s = Math.floor((diff / 1000) % 60);
+        daysEl.textContent = pad(d);
+        hoursEl.textContent = pad(h);
+        minsEl.textContent = pad(m);
+        secsEl.textContent = pad(s);
+      }
+      tick();
+      setInterval(tick, 1000);
+    })();
+
+    // Unlock audio on the first genuine user gesture. Browsers only allow
+    // audio playback after a real interaction (click/tap/keypress) - a
+    // mouse-wheel scroll alone doesn't qualify in most browsers, so on
+    // desktop (which is primarily wheel-driven) audio may only kick in once
+    // the first click or key press happens, not on the very first scroll.
+    (function enableAudioOnFirstGesture() {
+      const unlock = () => {
+        document.querySelectorAll('video').forEach(v => { v.muted = false; });
+        window.removeEventListener('click', unlock);
+        window.removeEventListener('touchend', unlock);
+        window.removeEventListener('keydown', unlock);
+      };
+      window.addEventListener('click', unlock, { once: true });
+      window.addEventListener('touchend', unlock, { once: true });
+      window.addEventListener('keydown', unlock, { once: true });
+    })();
 
     const isMobileView = window.innerWidth <= 768;
 
